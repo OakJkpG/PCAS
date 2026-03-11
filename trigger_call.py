@@ -26,7 +26,7 @@ def make_outbound_call(target_phone_number):
 
     # 3. เตรียมข้อมูล (Body) แบบเดียวกับที่กรอกใน Postman
     payload = {
-        "gatewayId": "7e18fe37-e1d0-4685-8cc0-50279352847e",
+        "gatewayId": "",
         "sipCallTo": target_phone_number
     }
 
@@ -52,4 +52,5 @@ if __name__ == "__main__":
     PHONE_NUMBER = "+66924437639"
     
     
+
     make_outbound_call(PHONE_NUMBER)

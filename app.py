@@ -17,7 +17,7 @@ app = Flask(__name__)
 
 TWILIO_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_PHONE = os.getenv("TWILIO_PHONE_NUMBER", "+17755228619")
+TWILIO_PHONE = os.getenv("TWILIO_PHONE_NUMBER")
 twilio_client = TwilioClient(TWILIO_SID, TWILIO_TOKEN) if TWILIO_SID else None
 TWIML_APP_SID = None
 API_KEY_SID = None

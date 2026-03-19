@@ -28,8 +28,8 @@ VIDEOSDK_TOKEN = os.getenv("VIDEOSDK_TOKEN")
 if VIDEOSDK_TOKEN:
     os.environ["VIDEOSDK_AUTH_TOKEN"] = VIDEOSDK_TOKEN # Support standard SDK name
 
-USER_NAME = os.getenv("USER_NAME", "จักรพงษ์")
-TRANSFER_NUMBER = os.getenv("TRANSFER_NUMBER", "+66924437639")
+USER_NAME = os.getenv("USER_NAME")
+TRANSFER_NUMBER = os.getenv("TRANSFER_NUMBER")
 
 
 # ─── Helpers ───────────────────────────────────────────────

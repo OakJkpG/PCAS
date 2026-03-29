@@ -384,7 +384,7 @@ def transfer_status():
     latest = transfer_state.pop("_latest", None)
     return jsonify(hasTransfer=bool(latest), conferenceName=latest["conferenceName"] if latest else None)
 
-# --- STARTUP ---
+# --- STARTUP WORKER (Runs globally for Gunicorn) ---
 def run_worker():
     """Run the VideoSDK Global Worker in a separate thread"""
     loop = asyncio.new_event_loop()
@@ -397,12 +397,14 @@ def run_worker():
     except Exception as e:
         logging.error(f"Worker Error: {e}")
 
-if __name__ == '__main__':
-    # Start Worker Thread
+# Start Worker Thread ONCE when the module loads
+if not os.environ.get("WERKZEUG_RUN_MAIN") == "true": # Skip if Flask reloader is on
     worker_thread = threading.Thread(target=run_worker, daemon=True)
     worker_thread.start()
-    
-    # Start Flask
+    logging.info("✨ Background worker thread launched.")
+
+if __name__ == '__main__':
+    # Start Flask (for local debugging)
     port = int(os.environ.get("PORT", 5000))
     logging.info(f"🚀 Combined App running on port: {port}")
     app.run(port=port, host='0.0.0.0', use_reloader=False)

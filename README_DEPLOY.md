@@ -29,7 +29,9 @@ Set the following variables in the Render Dashboard (Settings > Environment Vari
 ## 3. Render Settings
 - **Runtime:** Python
 - **Build Command:** `pip install -r requirements.txt`
-- **Start Command:** `gunicorn app:app`
+- **Start Command:** `gunicorn combined_app:app`
+- **Memory Optimization:** Added `combined_app.py` to run both Web and AI in a single process.
+- **Python Version:** Set `PYTHON_VERSION` = `3.11.10` in Render Settings.
 
 ## 4. Keep-Alive (Prevent Sleeping)
 To prevent Render Free Tier from spinning down, use an external uptime monitor like **[cron-job.org](https://cron-job.org/)**:

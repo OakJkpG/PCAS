@@ -92,22 +92,25 @@ INSTRUCTIONS = f"""คุณคือ AI ผู้ช่วยรับสาย
     ใช้ check_calendar เพื่อตรวจสอบก่อน
     ถ้าไม่มีนัด → สามารถโอนสายได้
     ให้ถามยืนยันกับผู้โทรว่าต้องการโอนสายใช่ไหม
-    เมื่อผู้โทรยืนยันให้โอนสาย
+    เมื่อผู้โทรยืนยันให้โอนสาย ให้พูดว่า"กำลังต่อสาย ช่วยรอสักครู่"
     ใช้ transfer_call ด้วยเบอร์ {TRANSFER_NUMBER}
     หลังเรียก tool ให้พูดว่า:
-    "กำลังโอนสายให้ค่ะ กรุณารอสักครู่นะคะ"
-    ถ้ามีนัดให้ ให้เขาสู่กระบวนการ [กรณีปลายทางไม่รับสาย / ติดต่อไม่ได้]
-    ถ้าผู้โทรบอกว่า เรื่องด่วนให้ทำการโอนสาย
-    
-    [กรณีปลายทางไม่รับสาย / ติดต่อไม่ได้]
-    ถ้าโอนสายไม่สำเร็จ หรือไม่มีการรับสายภายในระยะเวลาที่กำหนด ให้พูดว่า:
+    - เมื่อเรียกใช้ transfer_call แล้ว ให้รอผลลัพธ์จาก tool
 
+    - ถ้า status = "answered":
+    พูดว่า "คุณ{USER_NAME}พร้อมแล้ว กำลังโอนสายให้ค่ะ กรุณารอสักครู่นะคะ"
+    แล้วหยุดการทำงาน
+
+    - ถ้า status = "no_answer":
+    พูดว่า:
     "ขออภัยค่ะ ขณะนี้คุณ{USER_NAME}ไม่สะดวกรับสาย
     หากต้องการ ดิฉันสามารถรับข้อความไว้ให้ได้นะคะ"
 
     ถ้าผู้โทรต้องการฝากข้อความ:
-    ให้ถามต่อ:
-    "รบกวนแจ้งข้อความที่ต้องการฝากได้เลยค่ะ"
+    - พูดว่า "รบกวนแจ้งข้อความที่ต้องการฝากได้เลยค่ะ"
+    - จากนั้นสรุป และเรียก `end_call_and_summarize`
+
+    - ห้ามออกจากห้องถ้ายังไม่มีคนรับสาย
     
 
 [ตรวจจับ Scammer]:
@@ -186,7 +189,6 @@ class MyVoiceAgent(Agent):
         """
         import requests as req
         logging.info(f"🛠️ โอนสายไปที่ {phone_number}")
-
         try:
             resp = await asyncio.get_running_loop().run_in_executor(
                 None,
@@ -197,14 +199,19 @@ class MyVoiceAgent(Agent):
                     timeout=10
                 )
             )
-            if resp.status_code in [200, 201, 202]:
+            data = resp.json()
+
+            if data.get("status") == "answered":
                 send_summary_email(f"ผู้โทรขอโอนสายไปหาคุณ{USER_NAME} ({phone_number})")
-                # รอ 15 วิ ให้โทรศัพท์เข้าห้อง แล้ว AI ออกเงียบๆ
                 asyncio.create_task(self._leave_after(15))
-                return {"status": "success", "message": "กำลังโอนสาย กรุณารอสักครู่"}
-            return {"status": "error", "message": f"โอนสายล้มเหลว ({resp.status_code})"}
-        except Exception as e:
-            return {"status": "error", "message": f"ระบบขัดข้อง ({e})"}
+                return {"status": "answered"}
+
+            elif data.get("status") == "no_answer":
+                return {"status": "no_answer"}
+
+            else:
+                return {"status": "error"}
+        except Exception as e: return {"status": "error", "message": f"ระบบขัดข้อง ({e})"}
 
     async def _leave_after(self, seconds: int):
         """หน่วงเวลาแล้วออกจากห้องให้คลีนที่สุด"""

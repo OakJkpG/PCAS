@@ -1,0 +1,9 @@
+videosdk-agents==0.0.66
+videosdk-plugins-google==0.0.66
+python-dotenv==1.1.1
+requests==2.31.0
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+flask==3.0.0
+twilio>=9.10.0

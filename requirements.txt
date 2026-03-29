@@ -7,3 +7,4 @@ google-auth-httplib2
 google-auth-oauthlib
 flask==3.0.0
 twilio>=9.10.0
+gunicorn

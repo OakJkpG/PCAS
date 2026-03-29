@@ -3,6 +3,7 @@ import requests
 import os
 import subprocess
 import time
+import sys
 from dotenv import load_dotenv
 
 from twilio.rest import Client as TwilioClient
@@ -12,6 +13,14 @@ from twilio.twiml.voice_response import VoiceResponse
 
 load_dotenv()
 app = Flask(__name__)
+
+# ─── Restore token.json from ENV (Render Persistence Trick) ──
+if not os.path.exists("token.json"):
+    token_data = os.getenv("GOOGLE_TOKEN_DATA")
+    if token_data:
+        with open("token.json", "w") as f:
+            f.write(token_data)
+        print("✅ Restored token.json from GOOGLE_TOKEN_DATA")
 
 # ─── Twilio Setup ──────────────────────────────────────────
 
@@ -27,12 +36,12 @@ API_KEY_SECRET = None
 transfer_state = {}
 
 
-def get_ngrok_url():
-    """ดึง ngrok URL จาก .env หรือจาก ngrok API"""
-    url = os.getenv("NGROK_URL")
+def get_public_url():
+    """ดึง URL สาธารณะ (จาก RENDER_EXTERNAL_URL หรือ NGROK_URL)"""
+    url = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("NGROK_URL")
     if url:
         return url.rstrip("/")
-    # ลอง auto-detect จาก ngrok local API
+    # ลอง auto-detect จาก ngrok local API (กรณีรัน local)
     try:
         r = requests.get("http://127.0.0.1:4040/api/tunnels", timeout=2)
         tunnels = r.json().get("tunnels", [])
@@ -45,17 +54,17 @@ def get_ngrok_url():
 
 
 def get_twiml_app_sid():
-    """สร้างหรือ reuse TwiML App (ชี้ voice_url ไปที่ ngrok)"""
+    """สร้างหรือ reuse TwiML App (ชี้ voice_url ไปที่ URL สาธารณะ)"""
     global TWIML_APP_SID
     if TWIML_APP_SID:
         return TWIML_APP_SID
 
-    ngrok_url = get_ngrok_url()
-    if not ngrok_url:
-        print("⚠️  ไม่พบ NGROK_URL — รัน ngrok http 5000 ก่อน")
+    pub_url = get_public_url()
+    if not pub_url:
+        print("⚠️  ไม่พบ Public URL (RENDER_EXTERNAL_URL หรือ NGROK_URL)")
         return None
 
-    voice_url = f"{ngrok_url}/twilio_voice"
+    voice_url = f"{pub_url}/twilio_voice"
     apps = twilio_client.applications.list(friendly_name="PCAS Transfer")
     
     if apps:
@@ -128,7 +137,6 @@ HTML_TEMPLATE = """
         let pollTimer = null;
         const $ = id => document.getElementById(id);
 
-        // ─── VideoSDK (AI Chat) ───
         function attachAudio(m) {
             m.on("participant-joined", p => {
                 p.on("stream-enabled", s => {
@@ -145,7 +153,6 @@ HTML_TEMPLATE = """
             });
             m.on("participant-left", p => {
                 const el = $('a-' + p.id); if (el) el.remove();
-                // ถ้า AI ออกจากห้อง และเรายังไม่ได้กำลังคุยสาย Twilio -> แปลว่า AI วางสาย
                 if (!twilioConn) {
                     $('status').innerHTML = '<span class="success">ℹ️ สิ้นสุดการสนทนาโดย AI</span>';
                     setTimeout(() => endCall(), 1500);
@@ -186,7 +193,6 @@ HTML_TEMPLATE = """
             }
         }
 
-        // ─── Transfer Polling → Switch to Twilio ───
         function startTransferPoll() {
             pollTimer = setInterval(async () => {
                 try {
@@ -195,11 +201,7 @@ HTML_TEMPLATE = """
                     if (!d.hasTransfer) return;
                     clearInterval(pollTimer);
                     $('status').innerHTML = '<span class="success">📞 กำลังเชื่อมต่อสายโทรศัพท์...</span>';
-
-                    // ออกจาก VideoSDK
                     if (meeting) { meeting.leave(); meeting = null; }
-
-                    // เข้า Twilio Conference
                     await joinTwilioConference(d.conferenceName);
                 } catch(e) { console.error(e); }
             }, 3000);
@@ -207,36 +209,20 @@ HTML_TEMPLATE = """
 
         async function joinTwilioConference(confName) {
             try {
-                console.log('🔗 Fetching Twilio token...');
                 const res = await fetch('/twilio_token');
                 const data = await res.json();
                 if (data.error) throw new Error(data.error);
-                console.log('✅ Token received');
-
                 const device = new Twilio.Device(data.token, { logLevel: 1 });
-                // ไม่ต้อง register() เพราะเราไม่รับสายเข้า แค่โทรออก
-
-                console.log('📞 Connecting to conference:', confName);
                 twilioConn = await device.connect({ params: { conferenceName: confName } });
-                console.log('📞 device.connect() returned, waiting for accept...');
-
                 twilioConn.on('accept', () => {
-                    console.log('✅ Call accepted!');
                     $('status').innerHTML = '<span class="success">✅ เชื่อมต่อสายโทรศัพท์สำเร็จ! คุยกันได้เลย</span>';
                     $('title').innerText = '📞 สนทนาสด';
                     $('desc').innerText = 'คุณกำลังคุยกับโทรศัพท์โดยตรง';
                     $('btnEnd').style.display = 'block';
                 });
-
-                twilioConn.on('disconnect', () => { console.log('📴 Disconnected'); resetUI(); });
-                twilioConn.on('error', (err) => {
-                    console.error('Twilio call error:', err);
-                    $('status').innerHTML = '<span class="error">❌ ' + err.message + '</span>';
-                });
-
+                twilioConn.on('disconnect', () => { resetUI(); });
                 window._twilioDevice = device;
             } catch(e) {
-                console.error('joinTwilioConference error:', e);
                 $('status').innerHTML = '<span class="error">❌ ' + e.message + '</span>';
             }
         }
@@ -283,7 +269,8 @@ def generate_room():
         if res.status_code != 200:
             return jsonify(success=False, error=f"API {res.status_code}"), 400
         room_id = res.json()["roomId"]
-        subprocess.Popen(["python", "main.py", "--room-id", room_id])
+        # ใช้ sys.executable แทน "python" เพื่อความแม่นยำใน container
+        subprocess.Popen([sys.executable, "main.py", "--room-id", room_id])
         print(f"🤖 AI Agent started for room: {room_id}")
         return jsonify(success=True, roomId=room_id, token=token)
     except Exception as e:
@@ -292,10 +279,9 @@ def generate_room():
 
 @app.route('/twilio_token')
 def get_twilio_token():
-    """สร้าง AccessToken + VoiceGrant สำหรับ Twilio Voice SDK 2.x"""
     twiml_sid = get_twiml_app_sid()
     if not twiml_sid:
-        return jsonify(error="TwiML App not configured. Run ngrok first."), 500
+        return jsonify(error="TwiML App not configured."), 500
     api_sid, api_secret = get_api_key()
     token = AccessToken(
         TWILIO_SID, api_sid, api_secret,
@@ -314,7 +300,6 @@ def get_twilio_token():
 
 @app.route('/twilio_voice', methods=['POST'])
 def twilio_voice():
-    """TwiML Webhook — เมื่อเว็บ connect ผ่าน Twilio Device จะเข้า Conference นี้"""
     conf_name = request.form.get("conferenceName", "default")
     resp = VoiceResponse()
     dial = resp.dial()
@@ -328,7 +313,6 @@ def twilio_voice():
 
 @app.route('/transfer_call', methods=['POST'])
 def handle_transfer():
-    """โอนสาย: โทรหาโทรศัพท์เข้า Twilio Conference"""
     phone = request.json.get('phoneNumber')
     if not phone:
         return jsonify(success=False, error="Missing phoneNumber"), 400
@@ -336,26 +320,19 @@ def handle_transfer():
     conf_name = f"transfer-{int(time.time())}"
 
     try:
-        # โทรหาโทรศัพท์ ใส่ใน Conference เดียวกัน
         call = twilio_client.calls.create(
             to=phone,
             from_=TWILIO_PHONE,
             twiml=f'<Response><Dial><Conference startConferenceOnEnter="true" endConferenceOnExit="false">{conf_name}</Conference></Dial></Response>'
         )
-        print(f"✅ Twilio call → {phone}, Conference: {conf_name}, CallSID: {call.sid}")
-
-        # เก็บ conference name ไว้ให้ frontend poll
         transfer_state["_latest"] = {"conferenceName": conf_name}
-
-        # เขียน flag ให้ dispatched AI (ถ้ามี) ออกจากห้อง
         flag_path = os.path.join(os.path.dirname(__file__) or ".", "_transfer_flag")
         with open(flag_path, "w") as f:
             f.write(str(time.time()))
-
-        return jsonify(success=True, conferenceName=conf_name)
+        return jsonify(status="answered", conferenceName=conf_name)
     except Exception as e:
         print(f"❌ Twilio error: {e}")
-        return jsonify(success=False, error=str(e)), 500
+        return jsonify(status="no_answer", error=str(e)), 500
 
 
 @app.route('/transfer_status')
@@ -369,18 +346,22 @@ def transfer_status():
 # ─── Start ─────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    # Pre-flight: Google Calendar Auth
-    if not os.path.exists("token.json"):
-        print("🔐 First-time login: Requesting Google Calendar auth...")
-        subprocess.run(["python", "main.py", "--auth-only"])
+    # Pre-flight check for Google Calendar (Only try to login if not in prod or if token exists)
+    # ใน Production เราจะเน้น Restoration จาก ENV แทน
+    if not os.path.exists("token.json") and os.path.exists("credentials.json"):
+        print("🔐 First-time login check...")
+        subprocess.run([sys.executable, "main.py", "--auth-only"])
 
-    ngrok = get_ngrok_url()
+    pub_url = get_public_url()
     print("=" * 50)
-    print("🌐 Web Server: http://localhost:5000")
-    if ngrok:
-        print(f"🔗 ngrok: {ngrok}")
-        get_twiml_app_sid()  # Pre-create TwiML App
+    if pub_url:
+        print(f"🌐 Public/Production URL: {pub_url}")
+        get_twiml_app_sid()  # Pre-create/Update TwiML App
     else:
-        print("⚠️  ngrok ไม่พบ! รัน: ngrok http 5000")
+        print("⚠️  Working in strictly Local mode (No public URL found)")
+    
+    port = int(os.environ.get("PORT", 5000))
+    print(f"🚀 Server running on port: {port}")
     print("=" * 50)
-    app.run(port=5000, host='0.0.0.0', use_reloader=False)
+    
+    app.run(port=port, host='0.0.0.0', use_reloader=False)

@@ -384,27 +384,37 @@ def transfer_status():
     latest = transfer_state.pop("_latest", None)
     return jsonify(hasTransfer=bool(latest), conferenceName=latest["conferenceName"] if latest else None)
 
-# --- STARTUP WORKER (Runs globally for Gunicorn) ---
-def run_worker():
-    """Run the VideoSDK Global Worker in a separate thread"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        options = Options(agent_id="MyTelephonyAgent", register=True, max_processes=1, host="localhost", port=8081)
-        job = WorkerJob(entrypoint=start_session, options=options)
-        logging.info("🤖 AI Worker starting (Local Registration mode)...")
-        job.start()
-    except Exception as e:
-        logging.error(f"Worker Error: {e}")
-
-# Start Worker Thread ONCE when the module loads
-if not os.environ.get("WERKZEUG_RUN_MAIN") == "true": # Skip if Flask reloader is on
-    worker_thread = threading.Thread(target=run_worker, daemon=True)
-    worker_thread.start()
-    logging.info("✨ Background worker thread launched.")
+# --- STARTUP LOGIC: Flask in Thread, Worker in Main ---
+def run_flask():
+    """Run Flask in a background thread"""
+    port = int(os.environ.get("PORT", 5000))
+    logging.info(f"🚀 Flask Web Server starting on port: {port}")
+    app.run(port=port, host='0.0.0.0', use_reloader=False)
 
 if __name__ == '__main__':
-    # Start Flask (for local debugging)
-    port = int(os.environ.get("PORT", 5000))
-    logging.info(f"🚀 Combined App running on port: {port}")
-    app.run(port=port, host='0.0.0.0', use_reloader=False)
+    # 1. Start Flask in Background Thread
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    logging.info("✨ Flask thread launched.")
+    
+    # 2. Wait a few seconds for Flask to settle
+    time.sleep(2)
+
+    # 3. Start VideoSDK Worker in MAIN THREAD (to handle signals correctly)
+    try:
+        options = Options(
+            agent_id="MyTelephonyAgent", 
+            register=True, 
+            max_processes=1, 
+            host="localhost", port=8081
+        )
+        job = WorkerJob(entrypoint=start_session, options=options)
+        logging.info("🤖 VideoSDK AI Worker starting in Main Thread...")
+        
+        # job.start() will block the main thread and handle SIGINT/SIGTERM
+        job.start()
+    except Exception as e:
+        logging.error(f"FATAL Worker Error: {e}")
+        # Keep the process alive if Flask is still running
+        while True:
+            time.sleep(60)

@@ -329,10 +329,9 @@ def handle_transfer():
         flag_path = os.path.join(os.path.dirname(__file__) or ".", "_transfer_flag")
         with open(flag_path, "w") as f:
             f.write(str(time.time()))
-        return jsonify(status="answered", conferenceName=conf_name)
+        return jsonify(success=True, conferenceName=conf_name)
     except Exception as e:
-        print(f"❌ Twilio error: {e}")
-        return jsonify(status="no_answer", error=str(e)), 500
+        return jsonify(success=False, error=str(e)), 500
 
 
 @app.route('/transfer_status')

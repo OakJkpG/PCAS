@@ -1,6 +1,6 @@
-# 🎙️ AI Personal Call Assistant System (PCAS)
+# 🎙️ AI Personal Call Automation System (PCAS)
 
-โปรเจกต์ **AI Personal Call Assistant System** คือระบบผู้ช่วยรับสายอัจฉริยะที่ช่วยรับสายแทนคุณ โดยสามารถพูดคุยโต้ตอบเป็นภาษาไทยแบบเรียลไทม์ผ่านเว็บเบราว์เซอร์และโอนสายไปยังโทรศัพท์มือถือผ่านเครือข่าย Twilio ได้อย่างสมบูรณ์
+โปรเจกต์ **AI Personal Call Automation System** คือระบบผู้ช่วยรับสายอัจฉริยะที่ช่วยรับสายแทนคุณ โดยสามารถพูดคุยโต้ตอบเป็นภาษาไทยแบบเรียลไทม์ผ่านเว็บเบราว์เซอร์และโอนสายไปยังโทรศัพท์มือถือผ่านเครือข่าย Twilio ได้อย่างสมบูรณ์
 
 ---
 
@@ -17,8 +17,8 @@
 
 ## 🏗️ โครงสร้างโปรเจกต์ (Project Structure)
 
--   **`app.py`**: เซิร์ฟเวอร์หลัก (Flask) จัดการหน้าเว็บ, ระบบโอนสาย Twilio และการจัดการห้องสนทนา
--   **`main.py`**: ตัวตนของ AI Agent จัดการการรับส่งข้อมูลเสียง, การทำงานร่วมกับ Gemini และเครื่องมือต่างๆ (Tools)
+-   **`local_combined_app.py`**: ไฟล์หลักสำหรับรันระบบทดสอบบนเครื่อง (Local) รวม Flask Web Server และ AI Worker ให้ทำงานร่วมกันผ่าน Multiprocessing เพื่อประหยัดหน่วยความจำ
+-   **`app.py` & `main.py`**: โค้ดต้นฉบับแยกส่วน สำหรับศึกษาโค้ด Web Server และ AI Agent แบบดั้งเดิม
 -   **`trigger_call.py`**: สคริปต์สำหรับทดสอบการโอนสายผ่าน API ของระบบ
 -   **`.env`**: ไฟล์รวมการตั้งค่า API Key และ Token ทั้งหมด
 
@@ -34,6 +34,7 @@
 4.  **Twilio Account**:
     -   Account SID, Auth Token และ Twilio Phone Number
 5.  **Gmail Account**: สำหรับส่งอีเมลสรุป (ต้องสร้าง **App Password**)
+6.  **Docs สำหรับ Quick Start**: https://docs.videosdk.live/telephony/ai-telephony-agent-quick-start
 
 ---
 
@@ -68,16 +69,14 @@ USER_NAME="ชื่อของคุณ"
 TRANSFER_NUMBER="เบอร์โทรศัพท์ของคุณ"
 ```
 
-### 3. ตั้งค่า Google Calendar
--   วางไฟล์ `credentials.json` ไว้ในโฟลเดอร์โปรเจกต์
--   รัน `python main.py` ครั้งแรกเพื่อทำการ Login (ไฟล์ `token.json` จะถูกสร้างขึ้นอัตโนมัติ)
-
-### 4. รันระบบ
-เปิด Terminal แล้วรันเซิร์ฟเวอร์หลัก:
+### 3. ยืนยันตัวตน และเริ่มรันระบบ (Local)
+ระบบใหม่ถูกอัปเดตให้เรียกใช้งานง่ายขึ้นด้วยคำสั่งเดียว:
+-   ตรวจสอบว่ามีไฟล์ `credentials.json` ในโฟลเดอร์โปรเจกต์
+-   เปิด Terminal (ถ้าต้องการให้โทรศัพท์โอนสายได้ ให้เปิด `ngrok http 5000` ทิ้งไว้ในอีกหน้าต่าง) แล้วรัน:
 ```bash
-python app.py
+python local_combined_app.py
 ```
-*(ถ้าต้องการให้โทรศัพท์โอนสายได้ ต้องรัน ngrok ก่อน: `ngrok http 5000`)*
+-   *หมายเหตุ: ในการรันครั้งแรก ระบบจะเด้ง Browser ขึ้นมาให้คุณ Login Google เพื่อขอสิทธิ์ใช้งาน Calendar (หลังจากนั้นจะได้ไฟล์ `token.json` เอาไว้ใช้ถาวร)*
 
 ---
 

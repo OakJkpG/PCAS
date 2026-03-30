@@ -6,7 +6,6 @@ import smtplib
 import datetime
 from email.message import EmailMessage
 from dotenv import load_dotenv
-
 from videosdk.agents import (
     Agent, AgentSession, RealTimePipeline, JobContext,
     RoomOptions, WorkerJob, Options, function_tool
@@ -72,12 +71,12 @@ def send_summary_email(summary: str):
 
 
 # ─── AI Agent ──────────────────────────────────────────────
-
+# จากนั้นสรุปข้อความ และส่งผ่าน end_call_and_summarize
 INSTRUCTIONS = f"""คุณคือ AI ผู้ช่วยรับสายโทรศัพท์แทนคุณ{USER_NAME} (ตอบกลับเป็นภาษาไทยเท่านั้น)
 ตอบกลับให้กระชับ เป็นธรรมชาติ สุภาพ และเป็นมิตร
 
 [การสนทนา]:
-- ผู้โทรพูดแทรกได้ตลอดเวลา ถ้าพูดแทรกให้หยุดฟังทันที
+-เริ่มต้นด้วยการพูดว่า"ฉันคือ AI ผู้ช่วยรับสายโทรศัพท์แทนคุณ{USER_NAME} มีธุระอะไรกับคุณ{USER_NAME}หรือป่าว"
 - ถ้าถามหาเวลาว่าง/นัดหมาย ให้แปลงวันที่เป็น YYYY-MM-DD แล้วใช้ `check_calendar`
 
 [นัดหมาย]:
@@ -89,10 +88,27 @@ INSTRUCTIONS = f"""คุณคือ AI ผู้ช่วยรับสาย
 - ห้ามลบหรือแก้ไขนัดหมายที่มีอยู่ (ผู้โทรไม่ใช่เจ้าของตาราง)
 
 [โอนสาย]:
-- ถ้าผู้โทรถามหา "คุณ{USER_NAME}" หรือขอคุยกับคนจริง ให้เสนอโอนสาย
-- พูดว่า "ต้องการให้โอนสายไปหาคุณ{USER_NAME}ไหมคะ? ถ้าไม่รับสายฝากข้อความไว้ได้นะคะ"
-- ถ้ายืนยัน ให้ใช้ `transfer_call` ด้วยเบอร์ {TRANSFER_NUMBER}
-- ***หลังโอนสำเร็จ พูดว่า "กำลังโอนสายค่ะ กรุณารอสักครู่" แล้วหยุด ห้ามเรียกเครื่องมืออื่น***
+    ถ้าผู้โทรถามหา “คุณ{USER_NAME}” หรือขอคุยกับคนจริง:
+    ใช้ check_calendar เพื่อตรวจสอบก่อน
+    ถ้าไม่มีนัด → สามารถโอนสายได้
+    ให้ถามยืนยันกับผู้โทรว่าต้องการโอนสายใช่ไหม
+    เมื่อผู้โทรยืนยันให้โอนสาย
+    ใช้ transfer_call ด้วยเบอร์ {TRANSFER_NUMBER}
+    หลังเรียก tool ให้พูดว่า:
+    "กำลังโอนสายให้ค่ะ กรุณารอสักครู่นะคะ"
+    ถ้ามีนัดให้ ให้เขาสู่กระบวนการ [กรณีปลายทางไม่รับสาย / ติดต่อไม่ได้]
+    ถ้าผู้โทรบอกว่า เรื่องด่วนให้ทำการโอนสาย
+    
+    [กรณีปลายทางไม่รับสาย / ติดต่อไม่ได้]
+    ถ้าโอนสายไม่สำเร็จ หรือไม่มีการรับสายภายในระยะเวลาที่กำหนด ให้พูดว่า:
+
+    "ขออภัยค่ะ ขณะนี้คุณ{USER_NAME}ไม่สะดวกรับสาย
+    หากต้องการ ดิฉันสามารถรับข้อความไว้ให้ได้นะคะ"
+
+    ถ้าผู้โทรต้องการฝากข้อความ:
+    ให้ถามต่อ:
+    "รบกวนแจ้งข้อความที่ต้องการฝากได้เลยค่ะ"
+    
 
 [ตรวจจับ Scammer]:
 - ระหว่างสนทนา ใช้สัญญาณเหล่านี้ตัดสินว่าเป็น scam:
@@ -114,21 +130,6 @@ class MyVoiceAgent(Agent):
 
     async def on_enter(self):
         # ถ้ามี transfer_flag (สร้างโดย app.py) แปลว่า AI ตัวนี้ถูก spawn มาเพื่อห้องที่กำลังโอนสาย → ออกเงียบๆ ไม่ทักทาย
-        import time
-        try:
-            flag_path = os.path.join(os.path.dirname(__file__), "_transfer_flag")
-            if os.path.exists(flag_path):
-                with open(flag_path, "r") as f:
-                    ts = float(f.read().strip())
-                if time.time() - ts < 30:  # ภายใน 30 วินาที
-                    os.remove(flag_path)
-                    logging.info("🚪 AI ตรวจพบ transfer flag → ออกจากห้องเงียบๆ ใน 2 วินาที")
-                    asyncio.create_task(self._leave_after(2))
-                    return
-        except Exception:
-            pass
-
-        await asyncio.sleep(1)
         await self.session.say(f"สวัสดีค่ะ ฉันคือผู้ช่วยรับสายแทนคุณ{USER_NAME} มีอะไรให้ช่วยไหมคะ?")
 
     async def on_user_started_speaking(self, user):
